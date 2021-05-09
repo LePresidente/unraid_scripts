@@ -1,0 +1,121 @@
+#!/bin/bash
+
+# This script is a modified version of neik's script at https://emby.media/community/index.php?/topic/83855-script-to-extract-subs/&do=findComment&comment=878783, cleaned up for my usage.
+DEBUG=false
+
+lang_list=(eng)
+DIR="/mnt/user/Anime"
+mkvinfocmd=(docker exec MKVToolNix /usr/bin/mkvinfo)
+mkvmergecmd=(docker exec MKVToolNix /usr/bin/mkvmerge)
+mkvextractcmd=(docker exec MKVToolNix /usr/bin/mkvextract)
+
+jsonoutput() {
+    "${mkvmergecmd[@]}" -J "$1" | jq -r '.tracks |map((.id | tostring) + "," + .type + "," + .properties.language + "," + (.properties.forced_track|tostring) + "," + .properties.track_name + "," + .properties.codec_id + "," + .properties.encoding) |join("\n")'
+}
+
+movefile() {
+    if [ ! -f "$2" ]; then
+        mv "$1" "$2" >/dev/null 2>&1
+    fi
+}
+
+echo "Working from directory $DIR"
+
+while IFS= read -r -d '' MKVFILE; do
+    MKV=${MKVFILE/\/mnt\/user//\/storage/}
+    BASENAME=$(basename "$MKV" ".mkv")
+    DIRNAME=$(dirname "${MKV}")
+    NEWBASEFILE=${BASENAME// /_}
+    NEWNAME="${NEWBASEFILE}.***"
+    echo "MKVFILE: $MKV"
+    echo "BASENAME: ${BASENAME}"
+    echo "DIRNAME: $DIRNAME"
+    echo "NEWBASEFILE: $NEWBASEFILE"
+    echo "NEWNAME: $NEWNAME"
+
+    if [ "$DEBUG" = "true" ]; then
+        "${mkvinfocmd[@]}" -r "$DIRNAME/$BASENAME.log" "$MKVFILE"
+    fi
+    subtitlename=${BASENAME%.*}
+    # Test if an english subtitle exist
+    echo "No subtitles found for $BASENAME"
+    # Number of matching embedded subtitle tracks
+    subnum=$(jsonoutput "$MKV" | grep -c subtitles)
+    echo "Number of matching subtitles is $subnum"
+    for lang in "${lang_list[@]}"; do
+        # Find out which tracks contain the subtitles
+        echo "Checking $BASENAME for $lang subtitle tracks"
+        jsonoutput "$MKV" | grep subtitles | grep "$lang" | while read -r subline; do
+            count=0
+            # Grep the number of the subtitle track
+            tracknumber=$(echo "$subline" | cut -d "," -f1)
+
+            # Grep the subtitle format
+            format=$(echo "$subline" | cut -d "," -f6)
+
+            forced=$(echo "$subline" | cut -d "," -f4)
+
+            language=$(echo "$subline" | cut -d "," -f3)
+
+            track_name=$(echo "$subline" | cut -d "," -f5)
+
+            case $format in
+            S_TEXT/UTF8)
+                format=".srt"
+                ;;
+            S_TEXT/SSA)
+                format=".ssa"
+                ;;
+            S_TEXT/ASS)
+                format=".ass"
+                ;;
+            S_TEXT/USF)
+                format=".usf"
+                ;;
+            S_VOBSUB)
+                format=""
+                ;;
+            S_HDMV/PGS)
+                format=".sup"
+                ;;
+            *) ;;
+            esac
+
+            # Get base name for subtitle
+            subtitlename=${BASENAME%.*}
+
+            # Extract the track to a .tmp file
+            echo "Extracting subtitle track to temporary file for $BASENAME"
+            "${mkvextractcmd[@]}" tracks "$MKV" "${tracknumber}:${subtitlename}${format}.tmp" >/dev/null 2>&1
+            if [ -f "${subtitlename}${format}.tmp" ]; then
+                chmod g+rw "$subtitlename$format.tmp"
+            fi
+            if [ -f "$subtitlename$format.tmp" ]; then
+
+                if [ -z "$track_name" ]; then
+                    subname="${track_name}($language)"
+                else
+                    subname="$language"
+                fi
+
+                if [ "$forced" = "true" ]; then
+                    # rename forced subtitle for plex
+                    echo "Subtitle track appears to be forced, renaming as eng.forced${format}"
+                    if [ ! -f "$DIRNAME/$subtitlename.${subname}.forced$format" ]; then
+                        subname=$subname$count
+                    fi
+                    movefile "$subtitlename$format.tmp" "$DIRNAME/$subtitlename.${subname}.forced$format"
+                else
+                    # Rename in .$lang_en.$format for plex
+                    echo "Subtitle track appears to be full, renaming as $lang$format"
+                    if [ ! -f "$DIRNAME/$subtitlename.${subname}${format}" ]; then
+                        subname=$subname$count
+                    fi
+                    movefile "$subtitlename$format.tmp" "$DIRNAME/$subtitlename.${subname}${format}"
+                    
+                fi
+            fi
+            count=$((count+1))
+        done
+    done
+done < <(find "$DIR" -size +180M -name '*.mkv' -print0 | sort -n)

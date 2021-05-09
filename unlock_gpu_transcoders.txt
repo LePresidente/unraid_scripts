@@ -1,0 +1,6 @@
+#!/bin/bash
+wget https://raw.githubusercontent.com/keylase/nvidia-patch/master/patch.sh
+if [ "$(<patch md5sum)" != "$(</boot/nvidia-patch/patch.sh md5sum)" ]; then
+    cp patch.sh /boot/nvidia-patch/patch.sh
+fi
+chmod +x /boot/nvidia-patch/patch.sh && bash /boot/nvidia-patch/patch.sh

@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+
+mkdir -p /mnt/cache/Movies
+cd /mnt/user0/Movies
+find . -type f -regex '.*\(\.png\|\.nfo\|\.jpg\|\.bif\|\.mp3\)' | cpio -updm /mnt/cache/Movies
+find . -type f -regex '.*\(\.png\|\.nfo\|\.jpg\|\.bif\|\.mp3\)' -delete
+
+mkdir -p /mnt/cache/Series
+cd /mnt/user0/Series
+find . -type f -regex '.*\(\.png\|\.nfo\|\.jpg\|\.bif\|\.mp3\)' | cpio -updm /mnt/cache/Series
+find . -type f -regex '.*\(\.png\|\.nfo\|\.jpg\|\.bif\|\.mp3\)' -delete
+
+mkdir -p /mnt/cache/Anime
+cd /mnt/user0/Anime
+find . -type f -regex '.*\(\.png\|\.nfo\|\.jpg\|\.bif\|\.mp3\)' | cpio -updm /mnt/cache/Anime
+find . -type f -regex '.*\(\.png\|\.nfo\|\.jpg\|\.bif\|\.mp3\)' -delete
