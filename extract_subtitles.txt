@@ -101,14 +101,14 @@ while IFS= read -r -d '' MKVFILE; do
                 if [ "$forced" = "true" ]; then
                     # rename forced subtitle for plex
                     echo "Subtitle track appears to be forced, renaming as eng.forced${format}"
-                    if [ ! -f "$DIRNAME/$subtitlename.${subname}.forced$format" ]; then
+                    if [ -f "$DIRNAME/$subtitlename.${subname}.forced$format" ]; then
                         subname=$subname$count
                     fi
                     movefile "$subtitlename$format.tmp" "$DIRNAME/$subtitlename.${subname}.forced$format"
                 else
                     # Rename in .$lang_en.$format for plex
                     echo "Subtitle track appears to be full, renaming as $lang$format"
-                    if [ ! -f "$DIRNAME/$subtitlename.${subname}${format}" ]; then
+                    if [ -f "$DIRNAME/$subtitlename.${subname}${format}" ]; then
                         subname=$subname$count
                     fi
                     movefile "$subtitlename$format.tmp" "$DIRNAME/$subtitlename.${subname}${format}"
