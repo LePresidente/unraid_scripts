@@ -2,6 +2,7 @@
 
 # This script is a modified version of neik's script at https://emby.media/community/index.php?/topic/83855-script-to-extract-subs/&do=findComment&comment=878783, cleaned up for my usage.
 DEBUG=false
+DOCKER=true
 
 lang_list=(eng)
 DIR="/mnt/user/Anime"
@@ -13,9 +14,19 @@ jsonoutput() {
     "${mkvmergecmd[@]}" -J "$1" | jq -r '.tracks |map((.id | tostring) + "," + .type + "," + .properties.language + "," + (.properties.forced_track|tostring) + "," + .properties.track_name + "," + .properties.codec_id + "," + .properties.encoding) |join("\n")'
 }
 
+info_log() {
+    printf "Log: %s \n" "$1"
+}
+
+debug_log() {
+    if [ $DEBUG = "true" ]; then
+        printf "Debug: %S \n" "$1"
+    fi
+}
+
 movefile() {
     if [ ! -f "$2" ]; then
-        mv "$1" "$2" >/dev/null 2>&1
+        mv "$1" "$2" #>/dev/null 2>&1
     fi
 }
 
@@ -25,39 +36,42 @@ while IFS= read -r -d '' MKVFILE; do
     MKV=${MKVFILE/\/mnt\/user//\/storage/}
     BASENAME=$(basename "$MKV" ".mkv")
     DIRNAME=$(dirname "${MKV}")
+    OUTPUTDIR=$(dirname "${MKVFILE}")
     NEWBASEFILE=${BASENAME// /_}
     NEWNAME="${NEWBASEFILE}.***"
-    echo "MKVFILE: $MKV"
-    echo "BASENAME: ${BASENAME}"
-    echo "DIRNAME: $DIRNAME"
-    echo "NEWBASEFILE: $NEWBASEFILE"
-    echo "NEWNAME: $NEWNAME"
 
     if [ "$DEBUG" = "true" ]; then
+        debug_log "MKVFILE: $MKV"
+        debug_log "BASENAME: ${BASENAME}"
+        debug_log "DIRNAME: $DIRNAME"
+        debug_log "NEWBASEFILE: $NEWBASEFILE"
+        debug_log "NEWNAME: $NEWNAME"
         "${mkvinfocmd[@]}" -r "$DIRNAME/$BASENAME.log" "$MKVFILE"
     fi
     subtitlename=${BASENAME%.*}
     # Test if an english subtitle exist
-    echo "No subtitles found for $BASENAME"
+    info_log "No subtitles found for $BASENAME"
     # Number of matching embedded subtitle tracks
     subnum=$(jsonoutput "$MKV" | grep -c subtitles)
-    echo "Number of matching subtitles is $subnum"
+    info_log "Number of matching subtitles is $subnum"
     for lang in "${lang_list[@]}"; do
         # Find out which tracks contain the subtitles
-        echo "Checking $BASENAME for $lang subtitle tracks"
+        info_log "Checking $BASENAME for $lang subtitle tracks"
         jsonoutput "$MKV" | grep subtitles | grep "$lang" | while read -r subline; do
-            count=0
             # Grep the number of the subtitle track
             tracknumber=$(echo "$subline" | cut -d "," -f1)
 
             # Grep the subtitle format
             format=$(echo "$subline" | cut -d "," -f6)
-
             forced=$(echo "$subline" | cut -d "," -f4)
-
             language=$(echo "$subline" | cut -d "," -f3)
-
             track_name=$(echo "$subline" | cut -d "," -f5)
+
+            debug_log "Subline: $subline"
+            debug_log "format: ${format}"
+            debug_log "forced: $forced"
+            debug_log "language: $language"
+            debug_log "track_name: $track_name"
 
             case $format in
             S_TEXT/UTF8)
@@ -85,37 +99,41 @@ while IFS= read -r -d '' MKVFILE; do
             subtitlename=${BASENAME%.*}
 
             # Extract the track to a .tmp file
-            echo "Extracting subtitle track to temporary file for $BASENAME"
+            info_log "Extracting subtitle track to temporary file for $BASENAME"
             "${mkvextractcmd[@]}" tracks "$MKV" "${tracknumber}:${subtitlename}${format}.tmp" >/dev/null 2>&1
+            if [ $DOCKER = "true" ]; then
+                docker cp MKVToolNix:/tmp/"${subtitlename}${format}.tmp" "${subtitlename}${format}.tmp"
+                docker exec MKVToolNix rm -rf "/tmp/${subtitlename}${format}.tmp"
+            fi
             if [ -f "${subtitlename}${format}.tmp" ]; then
                 chmod g+rw "$subtitlename$format.tmp"
             fi
-            if [ -f "$subtitlename$format.tmp" ]; then
+            if [ -f "${subtitlename}${format}.tmp" ]; then
+                debug_log "File exist: $subtitlename$format.tmp"
 
-                if [ -z "$track_name" ]; then
-                    subname="${track_name}($language)"
+                if [ -n "$track_name" ]; then
+                    subname="${track_name}"
                 else
                     subname="$language"
                 fi
-
                 if [ "$forced" = "true" ]; then
                     # rename forced subtitle for plex
-                    echo "Subtitle track appears to be forced, renaming as eng.forced${format}"
-                    if [ ! -f "$DIRNAME/$subtitlename.${subname}.forced$format" ]; then
-                        subname=$subname$count
+                    info_log "Subtitle track appears to be forced, renaming as ${subname}.forced$format"
+                    if [ ! -f "$OUTPUTDIR/$subtitlename.${subname}.forced$format" ]; then
+                         movefile "${subtitlename}${format}.tmp" "$OUTPUTDIR/${subtitlename//[^A-Za-z0-9._-]/_}.${subname//[^A-Za-z0-9._-]/_}.forced$format"
+                    else
+                        rm -rf "${subtitlename}${format}.tmp"
                     fi
-                    movefile "$subtitlename$format.tmp" "$DIRNAME/$subtitlename.${subname}.forced$format"
                 else
                     # Rename in .$lang_en.$format for plex
-                    echo "Subtitle track appears to be full, renaming as $lang$format"
-                    if [ ! -f "$DIRNAME/$subtitlename.${subname}${format}" ]; then
-                        subname=$subname$count
+                    info_log "Subtitle track appears to be full, renaming as ${subname}${format}"
+                    if [  ! -f "$OUTPUTDIR/$subtitlename.${subname}${format}" ]; then
+                        movefile "${subtitlename}${format}.tmp" "$OUTPUTDIR/${subtitlename//[^A-Za-z0-9._-]/_}.${subname//[^A-Za-z0-9._-]/_}${format}"
+                    else
+                        rm -rf "${subtitlename}${format}.tmp"
                     fi
-                    movefile "$subtitlename$format.tmp" "$DIRNAME/$subtitlename.${subname}${format}"
-                    
                 fi
             fi
-            count=$((count+1))
         done
     done
 done < <(find "$DIR" -size +180M -name '*.mkv' -print0 | sort -n)
