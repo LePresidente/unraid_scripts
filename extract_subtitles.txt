@@ -112,7 +112,7 @@ while IFS= read -r -d '' MKVFILE; do
                 debug_log "File exist: $subtitlename$format.tmp"
 
                 if [ -n "$track_name" ]; then
-                    subname="${track_name}"
+                    subname="${track_name//[^A-Za-z0-9._-]/_}"
                 else
                     subname="$language"
                 fi
@@ -120,7 +120,7 @@ while IFS= read -r -d '' MKVFILE; do
                     # rename forced subtitle for plex
                     info_log "Subtitle track appears to be forced, renaming as ${subname}.forced$format"
                     if [ ! -f "$OUTPUTDIR/$subtitlename.${subname}.forced$format" ]; then
-                         movefile "${subtitlename}${format}.tmp" "$OUTPUTDIR/${subtitlename//[^A-Za-z0-9._-]/_}.${subname//[^A-Za-z0-9._-]/_}.forced$format"
+                         movefile "${subtitlename}${format}.tmp" "$OUTPUTDIR/${subtitlename}.${subname}.forced$format"
                     else
                         rm -rf "${subtitlename}${format}.tmp"
                     fi
@@ -128,7 +128,7 @@ while IFS= read -r -d '' MKVFILE; do
                     # Rename in .$lang_en.$format for plex
                     info_log "Subtitle track appears to be full, renaming as ${subname}${format}"
                     if [  ! -f "$OUTPUTDIR/$subtitlename.${subname}${format}" ]; then
-                        movefile "${subtitlename}${format}.tmp" "$OUTPUTDIR/${subtitlename//[^A-Za-z0-9._-]/_}.${subname//[^A-Za-z0-9._-]/_}${format}"
+                        movefile "${subtitlename}${format}.tmp" "$OUTPUTDIR/${subtitlename}.${subname}${format}"
                     else
                         rm -rf "${subtitlename}${format}.tmp"
                     fi
